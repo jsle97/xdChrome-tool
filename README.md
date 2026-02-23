@@ -211,6 +211,54 @@ CDP mode available for connecting to an existing Chrome instance instead of laun
 
 ---
 
+## Shell Setup
+
+**Option A — symlink (recommended)**
+
+```bash
+chmod +x src/xd-chrome.js
+sudo ln -s "$(pwd)/src/xd-chrome.js" /usr/local/bin/xdc
+```
+
+Now you can use `xdc` globally:
+```bash
+xdc navigate --url https://example.com
+xdc snapshot --verbose
+xdc click --uid el_3
+```
+
+**Option B — shell function with validation**
+
+Add to `~/.bashrc` or `~/.zshrc`:
+```bash
+xdc() {
+ local XDC_DIR="$HOME/tools/xdChrome-tool"
+ if [ $# -eq 0 ]; then
+  node "$XDC_DIR/src/xd-chrome.js" --help
+  return
+ fi
+ node "$XDC_DIR/src/xd-chrome.js" "$@"
+}
+```
+
+Then `source ~/.bashrc` and use as `xdc navigate --url ...`.
+
+**Option C — pipe-friendly wrapper for scripting**
+
+```bash
+xdc() {
+ local XDC_DIR="$HOME/tools/xdChrome-tool"
+ node "$XDC_DIR/src/xd-chrome.js" "$@" 2>/dev/null | jq -r '.result // .'
+}
+```
+
+Strips stderr and extracts `.result` — useful for chaining:
+```bash
+xdc navigate --url https://example.com | jq '.elementCount'
+```
+
+---
+
 ## Requirements
 
 - **Node.js 18+**
