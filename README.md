@@ -1,185 +1,244 @@
 # xdChrome-tool
 
-`xdChrome-tool` is a lightweight Node.js + Playwright browser automation toolkit focused on:
+A modular, zero-framework browser automation toolkit built on Node.js + Playwright. One CLI command = one deterministic browser action.
 
-- **CLI-driven execution** of browser actions
-- **Structured tools** (navigate, snapshot, click, fill, extract, etc.)
-- **Stealth-oriented behavior** (fingerprinting, behavior profiles, anti-detection helpers)
-- **Operational controls** for proxy rotation and ad blocking
-
-The project exposes a command-line entrypoint that maps short commands to strongly defined tool operations. It is useful when you need scriptable and inspectable browser workflows without a heavyweight framework wrapper.
+Unlike heavyweight automation frameworks, xdChrome-tool gives you composable, single-purpose commands that can be chained in shell scripts, piped to other tools, or orchestrated by AI agents. Every command outputs structured JSON — no guessing, no parsing HTML logs.
 
 ---
 
-## Main Capabilities
+## Why xdChrome-tool?
 
-### Core browser lifecycle
-- Launch Chromium via Playwright in headless or headed mode.
-- Optional CDP connection mode for attaching to an existing Chrome instance.
-- Context/page tracking, current URL state, visited URL history.
+**Snapshot-first interaction** — instead of brittle CSS selectors, you take an accessibility snapshot of the page, get a list of interactive elements with stable UIDs (`el_0`, `el_1`, ...), and interact by referencing those UIDs. If the DOM changes, just re-snapshot.
 
-### Interaction and extraction
-- Navigate to pages and auto-generate a lightweight interactive-element snapshot.
-- Click, fill, scroll, press keyboard keys, and handle dialogs.
-- Read page text (`extractContent`) and raw HTML (`getSource`).
-- Execute custom JavaScript in page context (`evaluate_script`).
+**4-layer click resilience** — when you click an element, the tool tries: primary CSS selector → ARIA role+name → text content match → JavaScript `.click()`. If the URL doesn't change on a link click, it auto-falls back to direct navigation via `href`.
 
-### Anti-detection and realism
-- Fingerprint generation and injection (UA/platform/hardware-related values).
-- Behavior emulation with profile-based typing/scroll delays.
-- Stealth diagnostics (`detectStealthIssues`) to detect common automation signals.
+**Built-in stealth stack** — fingerprint generation/injection, human-like typing and scrolling with behavioral profiles, stealth diagnostics, and anti-detection helpers. All modular — use what you need, skip what you don't.
 
-### Network/session controls
-- Built-in adblock manager with configurable blocking modes/rules.
-- Proxy manager with rotation, failure tracking, and temporary banning.
-
-### Result persistence
-- Save and read intermediate/final outputs to/from the `results/` directory.
-
----
-
-## Repository Structure
-
-At root:
-
-- `README.md` – user-facing project overview and usage
-- `DOC.md` – technical documentation
-- `src/` – all implementation files
-
-Inside `src/`:
-
-- `xd-chrome.js` – CLI entrypoint
-- `xd-chrome-cli.js` – CLI parser and command→tool mapping
-- `xd-chrome-core.js` – browser agent context and lifecycle
-- `xd-chrome-tools.js` – tool implementations
-- `xd-chrome-tools-schema.js` – tool metadata/schema
-- `xd-chrome-helpers.js` – utility helpers
-- `xd-chrome-extended/` – stealth, adblock, proxy, fingerprinting, behavior modules
-
----
-
-## Requirements
-
-- **Node.js 18+** recommended
-- Installed dependencies required by source code:
-  - `playwright`
-
-> Note: This repository currently does not contain `package.json`; install runtime dependencies according to your environment standards.
+**Operational controls** — proxy rotation with failure tracking and auto-banning, request-level adblock with LRU stats, cookie consent auto-dismissal (7 known banner selectors).
 
 ---
 
 ## Quick Start
 
-### 1) Run help
-
 ```bash
-node /home/runner/work/xdChrome-tool/xdChrome-tool/src/xd-chrome.js --help
+git clone https://github.com/jsle97/xdChrome-tool.git
+cd xdChrome-tool
+npm install          # installs playwright + node-fetch
+npx playwright install --with-deps
 ```
 
-### 2) Initialize browser
-
 ```bash
-node /home/runner/work/xdChrome-tool/xdChrome-tool/src/xd-chrome.js init
+# Initialize browser
+node src/xd-chrome.js init
+
+# Navigate
+node src/xd-chrome.js navigate --url https://example.com
+
+# See what's on the page
+node src/xd-chrome.js snapshot
+
+# Click an element from the snapshot
+node src/xd-chrome.js click --uid el_3
+
+# Extract page text
+node src/xd-chrome.js extract --selector "article"
+
+# Save output
+node src/xd-chrome.js save --filename result.md --content "Extracted data here"
+
+# Done
+node src/xd-chrome.js done --reason "Task complete"
 ```
 
-### 3) Navigate to a page
-
-```bash
-node /home/runner/work/xdChrome-tool/xdChrome-tool/src/xd-chrome.js navigate --url https://example.com
-```
-
-### 4) Snapshot and interact
-
-```bash
-node /home/runner/work/xdChrome-tool/xdChrome-tool/src/xd-chrome.js snapshot --verbose
-node /home/runner/work/xdChrome-tool/xdChrome-tool/src/xd-chrome.js click --uid el_0
-```
-
-### 5) Save output
-
-```bash
-node /home/runner/work/xdChrome-tool/xdChrome-tool/src/xd-chrome.js save --filename output.md --content "Automation result"
+Every command returns JSON:
+```json
+{
+  "ok": true,
+  "tool": "navigate",
+  "result": {
+    "success": true,
+    "url": "https://example.com",
+    "snapshot": "el_0 [link] \"More information...\"\nel_1 [link] \"IANA\"",
+    "elementCount": 2
+  }
+}
 ```
 
 ---
 
-## Command Reference (CLI)
+## Architecture
 
-General pattern:
-
-```bash
-node src/xd-chrome.js <command> [options]
+```
+xd-chrome.js              Entry point — runs CLI, exits with status code
+  └─ xd-chrome-cli.js     Parses argv, maps 22 commands → tool executions
+      ├─ xd-chrome-core.js     Browser context factory (init, tabs, cookies, lifecycle)
+      ├─ xd-chrome-tools.js    22 tool implementations with execute(ctx, params)
+      ├─ xd-chrome-tools-schema.js   Declarative tool metadata and parameter schemas
+      ├─ xd-chrome-helpers.js        Utility functions (sleep, parseArgv, logger, etc.)
+      └─ xd-chrome-extended/
+          ├─ xd-extended-adblock.js          Request interception with 5-step pipeline
+          ├─ xd-extended-proxy.js            Round-robin rotation, failure tracking, auto-ban
+          ├─ xd-extended-fingerprinting.js   UA/device fingerprint generation + injection
+          ├─ xd-extended-behavior.js         Human-like typing/scrolling with 3 profiles
+          ├─ xd-extended-stealth.js          Session manager binding fingerprint + behavior
+          └─ xd-extended-stealth-helpers.js  Shared constants and randomization utilities
 ```
 
-Common commands:
-
-- `init` / `close`
-- `navigate --url <https://...>`
-- `snapshot [--verbose]`
-- `click --uid <el_x>`
-- `fill --uid <el_x> --text "..."`
-- `open-link --uid <el_x>`
-- `scroll [--direction down|up|bottom] [--distance 500]`
-- `tab --target <index|url-fragment>`
-- `proxy <status|rotate>`
-- `adblock <status|enable|disable|setMode|updateConfig|resetStats>`
-- `fingerprint [--config '{"deviceType":"desktop"}']`
-- `stealth`
-- `behavior`
-- `wait --ms 1000`
-- `extract [--selector "article"]`
-- `source [--includeDoctype true|false]`
-- `eval --script "return document.title"`
-- `key --key Enter`
-- `dialog --action accept|dismiss [--promptText "..."]`
-- `save --filename file.md --content "..." [--append true]`
-- `read --filename file.md`
-- `done --reason "Task complete"`
+**Design principle**: each CLI invocation is isolated and deterministic. The tool creates a browser context, executes exactly one operation, prints JSON to stdout, and closes. This makes it trivially composable.
 
 ---
 
-## Typical Use Cases
+## Command Reference
 
-### 1) Website flow automation
-- Navigate through multi-step UI flows.
-- Click and fill form elements discovered via snapshots.
-- Handle popups/dialogs and capture resulting source/text.
+| Command | Description | Key Options |
+|---------|-------------|-------------|
+| `init` | Launch browser | |
+| `close` | Close browser | |
+| `navigate` | Go to URL (auto-snapshots) | `--url <URL>` |
+| `snapshot` | Accessibility snapshot of interactive elements | `--verbose` |
+| `click` | Click element by UID | `--uid el_5` |
+| `fill` | Fill input field | `--uid el_2 --text "value"` |
+| `open-link` | Navigate via element's href | `--uid el_3` |
+| `scroll` | Scroll page | `--direction down\|up\|bottom --distance 500` |
+| `tab` | Switch browser tab | `--target 0` or `--target "url-fragment"` |
+| `extract` | Extract readable text | `--selector "article"` |
+| `source` | Get raw HTML | `--includeDoctype` |
+| `eval` | Execute JavaScript in page | `--script "return document.title"` |
+| `key` | Press keyboard key | `--key Enter` |
+| `dialog` | Handle alert/confirm/prompt | `--action accept\|dismiss` |
+| `wait` | Pause execution | `--ms 2000` |
+| `save` | Save to results/ directory | `--filename out.md --content "..." --append` |
+| `read` | Read saved result | `--filename out.md` |
+| `proxy` | Proxy status or rotate | `status\|rotate` |
+| `adblock` | Adblock controls | `status\|enable\|disable\|setMode\|updateConfig\|resetStats` |
+| `fingerprint` | Generate + inject fingerprint | `--config '{"deviceType":"mobile"}'` |
+| `stealth` | Detect automation signals | |
+| `behavior` | Rotate behavior profile | |
+| `done` | Signal task completion | `--reason "Summary"` |
 
-### 2) Content extraction pipelines
-- Visit selected URLs.
-- Extract cleaned page text (`extractContent`) from `body` or a specific selector.
-- Save outputs as files for post-processing.
+---
 
-### 3) Basic anti-bot experimentation
-- Generate and inject rotating fingerprints.
-- Emulate human-like typing and scrolling behavior.
-- Run stealth checks to monitor detectable signals.
+## Extended Modules
 
-### 4) Proxy/adblock assisted browsing
-- Route traffic through rotating proxies.
-- Block heavy or ad-related resources to improve speed/noise profile.
+### Adblock Manager
+Request-level interception with a 5-step decision pipeline:
+1. Skip unsupported schemes (`data:`, `blob:`, `about:`)
+2. Allowlist domain bypass
+3. Block by resource type (balanced: media only; aggressive: images, media, fonts)
+4. Block by domain pattern (doubleclick, googlesyndication, taboola, criteo, etc.)
+5. Block by URL pattern
 
-### 5) Tool-driven orchestration
-- Use individual commands as composable units in shell scripts or higher-level agents.
+Includes LRU-based stats tracking (top 500 blocked hosts), hot config updates without browser restart, and multi-context support.
+
+```bash
+node src/xd-chrome.js adblock status
+node src/xd-chrome.js adblock setMode --mode aggressive
+node src/xd-chrome.js adblock updateConfig --blockUrlPatterns "tracker.example.com,ads.example.com"
+```
+
+### Proxy Manager
+Round-robin rotation with shuffled initial order and automatic failure handling:
+- **3 failures within 1 hour** → proxy gets banned for 12 hours
+- Ban state persists to disk (`data_arch/proxies.json`) across sessions
+- Reports success/failure per proxy for continuous health tracking
+
+```bash
+node src/xd-chrome.js proxy status    # { total: 5, available: 4, banned: 1 }
+node src/xd-chrome.js proxy rotate    # restarts browser with next available proxy
+```
+
+### Stealth Stack
+Three layers working together:
+
+**Fingerprinting** — generates consistent device fingerprints (UA, platform, timezone, WebGL vendor, hardware concurrency, screen dimensions) from curated pools. Injects via `addInitScript` to override `navigator` properties. Auto-regenerates every 5 minutes.
+
+**Behavior Emulation** — three profiles with different timing characteristics:
+
+| Profile | Click Delay | Type Delay | Scroll Pause |
+|---------|------------|------------|--------------|
+| `stealth` | 250–1100ms | 50–140ms | 80–320ms |
+| `casual` | 450–1800ms | 70–180ms | 120–450ms |
+| `researcher` | 800–2600ms | 80–200ms | 150–600ms |
+
+Typing is character-by-character with randomized per-character delays. Profile rotation every 10 minutes.
+
+**Stealth Diagnostics** — checks for detectable automation signals (webdriver property, low plugin count) and reports issues with severity levels.
+
+---
+
+## Use Cases
+
+**Shell script automation** — chain commands for multi-step flows:
+```bash
+node src/xd-chrome.js navigate --url "https://example.com/login"
+node src/xd-chrome.js snapshot
+node src/xd-chrome.js fill --uid el_0 --text "user@email.com"
+node src/xd-chrome.js fill --uid el_1 --text "password123"
+node src/xd-chrome.js click --uid el_2
+node src/xd-chrome.js extract --selector ".dashboard"
+node src/xd-chrome.js save --filename dashboard.md --content "$(cat)"
+```
+
+**Content extraction pipelines** — scrape and structure content:
+```bash
+for url in "${URLS[@]}"; do
+  node src/xd-chrome.js navigate --url "$url"
+  node src/xd-chrome.js extract --selector "article"
+  node src/xd-chrome.js save --filename "pages.md" --content "$(cat)" --append true
+done
+```
+
+**AI agent orchestration** — the structured JSON output and tool schema make this a natural fit for LLM tool-calling workflows. Each command maps to a well-defined tool with typed parameters.
+
+**QA and testing** — stealth diagnostics help identify automation detection vectors. Use fingerprint rotation and behavior profiles to test how your site handles different client configurations.
+
+---
+
+## Configuration
+
+Browser, proxy, adblock, and stealth settings are configured via the `DEFAULT_CONFIG` object in `xd-chrome-core.js`:
+
+```javascript
+{
+  browser: { headless: true, viewport: { width: 1280, height: 800 }, timeout: 30000 },
+  proxy: { enabled: false, urls: [] },
+  adblock: { enabled: true, mode: 'balanced' },
+  stealth: { enabled: true, deviceType: 'desktop', browserType: 'chrome', behaviorProfile: 'stealth' }
+}
+```
+
+CDP mode available for connecting to an existing Chrome instance instead of launching a new one.
+
+---
+
+## Requirements
+
+- **Node.js 18+**
+- **Playwright** (installed via npm)
 
 ---
 
 ## Limitations
 
-- No built-in test suite in current repository state.
-- Dependency manifest is not included at the moment.
-- Some stealth/fingerprint techniques may not bypass advanced bot protection systems.
+- One command per process invocation (by design — ensures isolation)
+- Stealth techniques may not bypass advanced bot protection (Cloudflare Turnstile, etc.)
+- No built-in test suite yet
 
 ---
 
-## Safety & Operational Notes
+## Safety & Legal
 
-- Treat `eval` (`evaluate_script`) as privileged functionality.
-- Validate target URLs and scripts before automation in production.
-- Be mindful of website ToS, legal requirements, and privacy regulations.
+- `eval` (`evaluate_script`) executes arbitrary JS in page context — treat as privileged
+- `openLink` blocks `javascript:` pseudo-URLs to prevent injection
+- File operations sanitize filenames to prevent path traversal
+- Always respect website Terms of Service, robots.txt, and applicable privacy regulations
 
 ---
 
 ## License
 
-No explicit license file is currently present in this repository. Add one if redistribution or commercial usage is planned.
+MIT — see [LICENSE](LICENSE)
+
+---
+
+**Author**: Jakub Śledzikowski — [jsle.eu](https://jsle.eu) | jakub@jsle.eu
